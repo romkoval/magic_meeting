@@ -11,6 +11,8 @@ struct MagicMeetingApp: App {
     init() {
         let container: ModelContainer
         do {
+            // SwiftData puts its store here but does not create the folder on first launch.
+            try FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
             container = try ModelContainer(for: Recording.self, AudioSegment.self, Highlight.self,
                                            ProtocolTemplate.self, EditStep.self, GlossaryTerm.self)
         } catch {
