@@ -1,0 +1,9 @@
+// Build settings shared by all configurations.
+// Put real values into Config/Local.xcconfig (git-ignored), see Local.xcconfig.example.
+// Hosts are given without the scheme: "//" starts a comment in xcconfig files.
+
+PROXY_HOST = proxy.example.com
+PROXY_CLIENT_TOKEN =
+PRIVACY_POLICY_URL_PATH = example.com/privacy
+
+#include? "Local.xcconfig"

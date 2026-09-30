@@ -1,0 +1,6 @@
+// Copy to Config/Local.xcconfig and fill in. Never commit Local.xcconfig.
+PROXY_HOST = mm.your-domain.de
+// Pilot token matching CLIENT_TOKENS on the proxy; replaced by App Attest before release.
+PROXY_CLIENT_TOKEN =
+PRIVACY_POLICY_URL_PATH = your-domain.de/privacy
+DEVELOPMENT_TEAM = ABCDE12345

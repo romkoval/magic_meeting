@@ -1,0 +1,30 @@
+[Unit]
+Description=Magic Meeting proxy (Groq Whisper + LLM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=magicmeeting
+Group=magicmeeting
+# GROQ_API_KEY and the rest of the settings; see proxy.env.example. Mode 0600, owned by root.
+EnvironmentFile=/etc/magic-meeting/proxy.env
+ExecStart=/opt/magic-meeting/proxy
+Restart=on-failure
+RestartSec=3
+
+# Hardening: the service needs nothing but outbound HTTPS and its listen port.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

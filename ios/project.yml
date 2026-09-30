@@ -1,0 +1,62 @@
+# Xcode project definition for XcodeGen: `brew install xcodegen && xcodegen`.
+# The .xcodeproj is generated and not committed.
+name: MagicMeeting
+options:
+  bundleIdPrefix: app.magicmeeting
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/App.xcconfig
+  Release: Config/App.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  MagicMeeting:
+    type: application
+    platform: iOS
+    sources:
+      - path: MagicMeeting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.magicmeeting.ios
+        PRODUCT_NAME: MagicMeeting
+        INFOPLIST_FILE: MagicMeeting/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_PREVIEWS: YES
+  MagicMeetingTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: MagicMeetingTests
+    dependencies:
+      - target: MagicMeeting
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.magicmeeting.ios.tests
+schemes:
+  MagicMeeting:
+    build:
+      targets:
+        MagicMeeting: all
+        MagicMeetingTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MagicMeetingTests
+    archive:
+      config: Release

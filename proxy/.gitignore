@@ -1,0 +1,4 @@
+build/
+*.env
+!deploy/proxy.env.example
+/proxy
