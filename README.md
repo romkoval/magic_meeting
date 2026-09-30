@@ -2,7 +2,7 @@
 
 iOS app that records meetings and turns them into a punctuated transcript,
 summary and minutes from a template, all editable by voice. The spec is the
-TZ document "iOS-приложение для записи и протоколирования встреч".
+TZ: [docs/TZ.md](docs/TZ.md).
 
 ```
 ios/     SwiftUI app, iOS 17+, Swift 6, system frameworks only
