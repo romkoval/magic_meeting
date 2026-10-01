@@ -25,23 +25,6 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
 
-  xcode-inventory:
-    name: Xcode inventory (${{ matrix.os }})
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[xcode-inventory]')
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-26]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - run: |
-          sw_vers
-          ls -d /Applications/Xcode*.app
-          for x in /Applications/Xcode_*.app; do
-            echo "== $x"; DEVELOPER_DIR="$x/Contents/Developer" xcodebuild -version 2>/dev/null | head -1
-            DEVELOPER_DIR="$x/Contents/Developer" xcodebuild -showsdks 2>/dev/null | grep -i 'iphoneos' || true
-          done
-
   ios:
     name: iOS build and unit tests
     runs-on: macos-15
