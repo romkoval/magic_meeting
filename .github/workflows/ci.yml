@@ -27,7 +27,7 @@ jobs:
 
   ios:
     name: iOS build and unit tests
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     defaults:
       run:
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
           xcodebuild -version
       - name: Generate project
         run: |
