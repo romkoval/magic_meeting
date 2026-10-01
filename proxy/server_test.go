@@ -41,7 +41,14 @@ func (f *fakeGroq) server(t *testing.T) *httptest.Server {
 			}
 			file, _, _ := r.FormFile("file")
 			f.lastFile, _ = io.ReadAll(file)
-			_ = json.NewEncoder(w).Encode(map[string]any{"text": " Привет, мир. ", "language": "russian", "duration": 12.5})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"text": " Привет, мир. ", "language": "russian", "duration": 12.5,
+				"segments": []any{
+					map[string]any{"id": 0, "start": 0.0, "end": 1.2, "text": " Привет,", "no_speech_prob": 0.01},
+					map[string]any{"id": 1, "start": 1.2, "end": 2.0, "text": "  "},
+					map[string]any{"id": 2, "start": 2.0, "end": 3.4, "text": " мир."},
+				},
+			})
 		case "/chat/completions":
 			_ = json.NewDecoder(r.Body).Decode(&f.lastChat)
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -100,6 +107,9 @@ func TestTranscribeForwardsAudioAndGlossary(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&got)
 	if got.Text != "Привет, мир." || got.Duration != 12.5 || got.Language != "russian" {
 		t.Fatalf("unexpected result %+v", got)
+	}
+	if len(got.Segments) != 2 || got.Segments[1] != (TranscriptSegment{Start: 2.0, End: 3.4, Text: "мир."}) {
+		t.Fatalf("unexpected segments %+v", got.Segments)
 	}
 	if string(f.lastFile) != "AUDIO" {
 		t.Fatalf("audio not forwarded")

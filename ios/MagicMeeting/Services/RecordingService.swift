@@ -80,8 +80,9 @@ final class RecordingService {
 
         do {
             while let segment = recording.orderedSegments.first(where: { $0.transcript == nil }) {
-                let text = try await transcribe(segment, of: recording, client: client)
+                let (text, timings) = try await transcribe(segment, of: recording, client: client)
                 guard isAlive(recording) else { return }
+                segment.timings = timings
                 segment.transcript = text
                 recording.applySegmentTranscript(text)
                 save()
@@ -107,7 +108,7 @@ final class RecordingService {
         Task { await process(recording) }
     }
 
-    private func transcribe(_ segment: AudioSegment, of recording: Recording, client: ProxyClient) async throws -> String {
+    private func transcribe(_ segment: AudioSegment, of recording: Recording, client: ProxyClient) async throws -> (String, [TranscriptTiming]) {
         let url = AudioStorage.fileURL(recordingID: recording.id, fileName: segment.fileName)
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
             throw RecordingServiceError.audioMissing
@@ -121,14 +122,16 @@ final class RecordingService {
         let glossary = glossaryTerms()
         let language = settings.recognitionLanguage.isEmpty ? nil : settings.recognitionLanguage
         var text = ""
-        for chunk in chunks {
+        var timings: [TranscriptTiming] = []
+        for (chunk, range) in zip(chunks, ranges) {
             let result = try await client.transcribe(fileURL: chunk, glossary: glossary, language: language)
             text = TranscriptMerger.merge(text, result.text)
+            timings = TimingMerger.append(result.segments ?? [], to: timings, offset: range.lowerBound)
             if let detected = LanguageCode.normalize(result.language), isAlive(recording) {
                 recording.language = detected
             }
         }
-        return text
+        return (text, timings)
     }
 
     // MARK: Summary

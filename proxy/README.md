@@ -23,7 +23,14 @@ if `CLIENT_TOKENS` is set, `Authorization: Bearer <token>`.
 | `glossary` | optional, one term per line; goes to the Whisper `prompt` |
 | `language` | optional ISO-639-1 code; auto-detected when empty |
 
-Response: `{"text": "...", "language": "russian", "duration": 612.4}`
+Response:
+
+```json
+{"text": "...", "language": "russian", "duration": 612.4,
+ "segments": [{"start": 0.0, "end": 4.2, "text": "..."}]}
+```
+
+Segment times are seconds from the start of the uploaded file; empty segments are dropped.
 
 ### `POST /v1/llm`
 

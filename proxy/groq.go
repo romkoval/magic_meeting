@@ -41,6 +41,15 @@ type TranscribeResult struct {
 	Text     string  `json:"text"`
 	Language string  `json:"language"`
 	Duration float64 `json:"duration"`
+	// Segments carry Whisper's timestamps (seconds from the start of the
+	// uploaded file). Speaker diarization will be aligned to them (TZ §12).
+	Segments []TranscriptSegment `json:"segments"`
+}
+
+type TranscriptSegment struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Text  string  `json:"text"`
 }
 
 func (g *Groq) Transcribe(ctx context.Context, fileName string, audio io.Reader, glossary []string, language string) (TranscribeResult, error) {
@@ -76,6 +85,13 @@ func (g *Groq) Transcribe(ctx context.Context, fileName string, audio io.Reader,
 		return TranscribeResult{}, err
 	}
 	out.Text = strings.TrimSpace(out.Text)
+	segments := make([]TranscriptSegment, 0, len(out.Segments))
+	for _, seg := range out.Segments {
+		if seg.Text = strings.TrimSpace(seg.Text); seg.Text != "" {
+			segments = append(segments, seg)
+		}
+	}
+	out.Segments = segments
 	return out, nil
 }
 

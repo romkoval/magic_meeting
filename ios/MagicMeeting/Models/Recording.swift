@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+enum RecordingSource: String, Codable, Sendable {
+    /// Recorded in the app.
+    case recorded
+    /// Imported from a file, e.g. a call recorded by the Phone app (TZ §3.9).
+    case imported
+}
+
 enum RecordingStatus: String, Codable, Sendable {
     case recording
     /// Recorded, waiting to be sent: no consent yet, offline, or queued.
@@ -27,6 +34,7 @@ final class Recording {
     var protocolText: String
     var templateId: UUID?
     var statusRaw: String
+    var sourceRaw: String = RecordingSource.recorded.rawValue
     /// ISO-639-1 code detected by Whisper for the latest segment.
     var language: String?
     var lastError: String?
@@ -38,7 +46,7 @@ final class Recording {
     @Relationship(deleteRule: .cascade, inverse: \EditStep.recording)
     var editSteps: [EditStep] = []
 
-    init(id: UUID = UUID(), startedAt: Date = .now) {
+    init(id: UUID = UUID(), startedAt: Date = .now, source: RecordingSource = .recorded) {
         self.id = id
         self.startedAt = startedAt
         self.duration = 0
@@ -48,11 +56,17 @@ final class Recording {
         self.summary = ""
         self.protocolText = ""
         self.statusRaw = RecordingStatus.recording.rawValue
+        self.sourceRaw = source.rawValue
     }
 
     var status: RecordingStatus {
         get { RecordingStatus(rawValue: statusRaw) ?? .failed }
         set { statusRaw = newValue.rawValue }
+    }
+
+    var source: RecordingSource {
+        get { RecordingSource(rawValue: sourceRaw) ?? .recorded }
+        set { sourceRaw = newValue.rawValue }
     }
 
     var orderedSegments: [AudioSegment] {

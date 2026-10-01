@@ -61,6 +61,7 @@ struct TranscriptionResponse: Decodable, Sendable {
     let text: String
     let language: String?
     let duration: Double?
+    let segments: [TranscriptTiming]?
 }
 
 enum LLMOperation: String, Sendable {

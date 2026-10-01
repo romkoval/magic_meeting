@@ -53,3 +53,30 @@ final class FormattersTests: XCTestCase {
         XCTAssertEqual(Formatters.duration(3723), "1:02:03")
     }
 }
+
+final class TimingMergerTests: XCTestCase {
+    func testShiftsByChunkOffsetAndDropsOverlap() {
+        let first = [
+            TranscriptTiming(start: 0, end: 300, text: "a"),
+            TranscriptTiming(start: 300, end: 600, text: "b"),
+        ]
+        // The second chunk starts at 595 s: its first 5 s repeat the end of the first chunk.
+        let second = [
+            TranscriptTiming(start: 0, end: 4.8, text: "b-tail"),
+            TranscriptTiming(start: 4.8, end: 20, text: "c"),
+        ]
+        let merged = TimingMerger.append(second, to: TimingMerger.append(first, to: [], offset: 0), offset: 595)
+        XCTAssertEqual(merged.map(\.text), ["a", "b", "c"])
+        XCTAssertEqual(merged.last?.start ?? 0, 599.8, accuracy: 0.001)
+        XCTAssertEqual(merged.last?.end ?? 0, 615, accuracy: 0.001)
+    }
+
+    func testTimingsRoundTripThroughSegment() {
+        let segment = AudioSegment(id: UUID(), order: 0, fileName: "x.m4a", duration: 10)
+        XCTAssertEqual(segment.timings, [])
+        segment.timings = [TranscriptTiming(start: 1, end: 2, text: "Привет")]
+        XCTAssertEqual(segment.timings.first?.text, "Привет")
+        segment.timings = []
+        XCTAssertNil(segment.timingsData)
+    }
+}
