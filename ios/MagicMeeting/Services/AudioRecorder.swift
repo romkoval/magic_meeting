@@ -48,7 +48,7 @@ final class AudioRecorder {
     func start(url: URL) throws {
         guard state == .idle else { return }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
