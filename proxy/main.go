@@ -20,6 +20,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if len(cfg.ClientTokens) == 0 {
+		log.Printf("WARNING: running without client authentication (ALLOW_NO_AUTH=1); do not expose this instance")
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           NewServer(cfg, NewGroq(cfg)).Handler(),

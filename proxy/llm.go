@@ -45,12 +45,27 @@ func badInput(format string, a ...any) error { return ErrBadInput{fmt.Sprintf(fo
 // errBadModelOutput is returned when the LLM answers with something we cannot use.
 var errBadModelOutput = errors.New("model returned malformed output")
 
-type chatFunc func(ctx context.Context, system, user string, jsonMode bool) (string, error)
+// maxCommandBytes bounds a spoken command: it comes from at most ~30 s of speech.
+const maxCommandBytes = 2000
+
+// Model output is untrusted; these bounds keep a runaway or hostile answer from
+// reaching the client as a huge edit list.
+const (
+	// maxReplacementBytes: a point replacement is a phrase or sentence, not a document.
+	maxReplacementBytes = 2000
+	// maxReplacements: a 30 s command cannot sensibly need more edits than this.
+	maxReplacements = 50
+)
+
+// maxTokens 0 means no cap.
+type chatFunc func(ctx context.Context, system, user string, jsonMode bool, maxTokens int) (string, error)
 
 type operation struct {
 	required func(LLMInput) error
 	build    func(LLMInput) (string, string)
 	jsonMode bool
+	// maxTokens caps the answer; 0 for ops that return whole documents.
+	maxTokens int
 	// parse converts the raw model answer into the result object sent to the client.
 	parse func(raw string, in LLMInput) (any, error)
 }
@@ -58,27 +73,27 @@ type operation struct {
 var operations = map[string]operation{
 	"summarize": {
 		required: need(func(in LLMInput) bool { return in.Transcript != "" }, "transcript"),
-		build:    buildSummarize, jsonMode: true, parse: parseSummarize,
+		build:    buildSummarize, jsonMode: true, maxTokens: 4096, parse: parseSummarize,
 	},
 	"protocol": {
 		required: need(func(in LLMInput) bool { return in.Transcript != "" && in.Template != "" }, "transcript, template"),
 		build:    buildProtocol, parse: parseText,
 	},
 	"edit_transcript": {
-		required: need(func(in LLMInput) bool { return in.Transcript != "" && in.Command != "" }, "transcript, command"),
-		build:    buildEditTranscript, jsonMode: true, parse: parseReplacements,
+		required: commandFits(need(func(in LLMInput) bool { return in.Transcript != "" && in.Command != "" }, "transcript, command")),
+		build:    buildEditTranscript, jsonMode: true, maxTokens: 4096, parse: parseReplacements,
 	},
 	"edit_text": {
-		required: need(func(in LLMInput) bool { return in.Text != "" && in.Command != "" }, "text, command"),
+		required: commandFits(need(func(in LLMInput) bool { return in.Text != "" && in.Command != "" }, "text, command")),
 		build:    buildEditText, parse: parseText,
 	},
 	"highlight": {
 		required: need(func(in LLMInput) bool { return in.Transcript != "" && in.Command != "" }, "transcript, command"),
-		build:    buildHighlight, jsonMode: true, parse: parseHighlight,
+		build:    buildHighlight, jsonMode: true, maxTokens: 4096, parse: parseHighlight,
 	},
 	"pick_template": {
 		required: need(func(in LLMInput) bool { return in.Command != "" && len(in.Templates) > 0 }, "command, templates"),
-		build:    buildPickTemplate, jsonMode: true, parse: parsePickTemplate,
+		build:    buildPickTemplate, jsonMode: true, maxTokens: 4096, parse: parsePickTemplate,
 	},
 	"draft_template": {
 		required: need(func(in LLMInput) bool { return in.Description != "" }, "description"),
@@ -95,6 +110,19 @@ func need(ok func(LLMInput) bool, fields string) func(LLMInput) error {
 	}
 }
 
+// commandFits additionally rejects an over-long command.
+func commandFits(check func(LLMInput) error) func(LLMInput) error {
+	return func(in LLMInput) error {
+		if err := check(in); err != nil {
+			return err
+		}
+		if len(in.Command) > maxCommandBytes {
+			return badInput("command is too long")
+		}
+		return nil
+	}
+}
+
 func RunLLM(ctx context.Context, chat chatFunc, req LLMRequest) (any, error) {
 	op, ok := operations[req.Op]
 	if !ok {
@@ -104,7 +132,7 @@ func RunLLM(ctx context.Context, chat chatFunc, req LLMRequest) (any, error) {
 		return nil, err
 	}
 	sys, user := op.build(req.Input)
-	raw, err := chat(ctx, sys, user, op.jsonMode)
+	raw, err := chat(ctx, sys, user, op.jsonMode, op.maxTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +209,19 @@ func parseReplacements(raw string, in LLMInput) (any, error) {
 	}
 	// Keep only replacements that can actually be applied to the transcript.
 	out := replacementsResult{Replacements: []Replacement{}}
+	seen := map[Replacement]bool{}
 	for _, rep := range r.Replacements {
-		if rep.Find != "" && rep.Find != rep.Replace && strings.Contains(in.Transcript, rep.Find) {
-			out.Replacements = append(out.Replacements, rep)
+		if rep.Find == "" || rep.Find == rep.Replace || !strings.Contains(in.Transcript, rep.Find) {
+			continue
 		}
+		if len(rep.Find) > maxReplacementBytes || len(rep.Replace) > maxReplacementBytes || seen[rep] {
+			continue
+		}
+		if len(out.Replacements) == maxReplacements {
+			break
+		}
+		seen[rep] = true
+		out.Replacements = append(out.Replacements, rep)
 	}
 	return out, nil
 }

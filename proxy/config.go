@@ -43,6 +43,10 @@ func LoadConfig() (Config, error) {
 	if c.GroqAPIKey == "" {
 		return c, errors.New("GROQ_API_KEY is not set")
 	}
+	// Failing closed: a forgotten variable must not silently open the proxy.
+	if len(c.ClientTokens) == 0 && os.Getenv("ALLOW_NO_AUTH") != "1" {
+		return c, errors.New("CLIENT_TOKENS is empty; set it, or set ALLOW_NO_AUTH=1 for local development")
+	}
 	return c, nil
 }
 

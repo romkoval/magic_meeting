@@ -128,6 +128,7 @@ type chatRequest struct {
 	Messages       []chatMessage   `json:"messages"`
 	Temperature    float64         `json:"temperature"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
 }
 
 type responseFormat struct {
@@ -141,11 +142,13 @@ type chatResponse struct {
 }
 
 // Chat sends one system+user exchange and returns the assistant's text.
-func (g *Groq) Chat(ctx context.Context, system, user string, jsonMode bool) (string, error) {
+// maxTokens caps the answer; 0 means no cap.
+func (g *Groq) Chat(ctx context.Context, system, user string, jsonMode bool, maxTokens int) (string, error) {
 	cr := chatRequest{
 		Model:       g.llmModel,
 		Messages:    []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
 		Temperature: 0.2,
+		MaxTokens:   maxTokens,
 	}
 	if jsonMode {
 		cr.ResponseFormat = &responseFormat{Type: "json_object"}
