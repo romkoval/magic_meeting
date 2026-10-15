@@ -160,8 +160,8 @@ final class ReplacementApplierTests: XCTestCase {
         // 14 doublings fit (3 * 2^14 a's); the 15th would pass the limit and every later one is skipped.
         XCTAssertEqual(outcome.text.utf8.count, 3 + 3 * 16_384)
         XCTAssertEqual(outcome.appliedCount, 3 * (16_384 - 1))
-        XCTAssertTrue(outcome.text.hasPrefix("baaaa"))
-        XCTAssertTrue(outcome.text.hasSuffix("naaaa"))
+        let run = String(repeating: "a", count: 16_384)
+        XCTAssertEqual(outcome.text, "b" + run + "n" + run + "n" + run)
     }
 
     func testOversizedFragmentsAreSkipped() {
