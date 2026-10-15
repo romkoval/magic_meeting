@@ -170,6 +170,94 @@ final class RecordingService {
         }
     }
 
+    // MARK: Voice editing
+
+    /// Recognizes a short spoken command (glossary + settings.recognitionLanguage). Returns trimmed text, possibly empty.
+    /// Throws VoiceEditError.needsConsent, ProxyError (incl. .notConfigured), CancellationError.
+    func transcribeCommand(fileURL: URL) async throws -> String {
+        guard settings.hasAIConsent else { throw VoiceEditError.needsConsent }
+        guard let client = makeVoiceEditClient() else { throw ProxyError.notConfigured }
+        let language = settings.recognitionLanguage.isEmpty ? nil : settings.recognitionLanguage
+        let result = try await client.transcribe(fileURL: fileURL, glossary: glossaryTerms(), language: language)
+        return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Sends the command with the target's text to the LLM, applies the result, records an
+    /// EditStep (with `command`) and saves. Throws VoiceEditError.needsConsent / .nothingToChange /
+    /// .textChanged, ProxyError, CancellationError. Never mutates anything when it throws.
+    func applyCommand(_ command: String, to recording: Recording, target: EditTarget) async throws -> VoiceEditResult {
+        guard settings.hasAIConsent else { throw VoiceEditError.needsConsent }
+        guard let client = makeVoiceEditClient() else { throw ProxyError.notConfigured }
+        let before = recording.text(for: target)
+        guard !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw VoiceEditError.nothingToChange
+        }
+        let glossary = glossaryTerms()
+        switch target {
+        case .transcript:
+            let input = LLMInput(
+                transcript: before,
+                command: command,
+                glossary: glossary,
+                language: recording.language,
+                uiLanguage: settings.interfaceLanguage
+            )
+            return try await applyReplacements(input, command: command, to: recording, client: client)
+        case .summary, .protocolText:
+            let input = LLMInput(
+                text: before,
+                command: command,
+                glossary: glossary,
+                language: recording.language,
+                uiLanguage: settings.interfaceLanguage
+            )
+            return try await applyFullText(input, before: before, command: command, to: recording, target: target, client: client)
+        }
+    }
+
+    /// EditHistory.undo + save().
+    func undoLastEdit(of recording: Recording, target: EditTarget) -> UndoOutcome {
+        let outcome = EditHistory.undo(recording, target: target, in: context)
+        if outcome == .undone {
+            save()
+        }
+        return outcome
+    }
+
+    private func applyReplacements(_ input: LLMInput, command: String, to recording: Recording, client: ProxyClient) async throws -> VoiceEditResult {
+        let result = try await client.llm(.editTranscript, input, as: ReplacementsResult.self)
+        try Task.checkCancellation()
+        guard isAlive(recording) else { throw CancellationError() }
+        // Applied to the current text, not the one sent: a segment may have been appended
+        // meanwhile, and the replacements still find their fragments in it.
+        let current = recording.transcript
+        let outcome = ReplacementApplier.apply(result.replacements, to: current)
+        guard outcome.appliedCount > 0, outcome.text != current else { throw VoiceEditError.nothingToChange }
+        EditHistory.record(recording, target: .transcript, before: current, after: outcome.text, command: command, in: context)
+        recording.setText(outcome.text, for: .transcript)
+        save()
+        return VoiceEditResult(
+            highlight: ChangeHighlight(target: .transcript, text: outcome.text, ranges: outcome.changedRanges),
+            changeCount: outcome.appliedCount
+        )
+    }
+
+    private func applyFullText(_ input: LLMInput, before: String, command: String, to recording: Recording, target: EditTarget, client: ProxyClient) async throws -> VoiceEditResult {
+        let result = try await client.llm(.editText, input, as: TextResult.self)
+        try Task.checkCancellation()
+        guard isAlive(recording) else { throw CancellationError() }
+        // A summary regenerated during the request must not be overwritten by an edit of the old one.
+        guard recording.text(for: target) == before else { throw VoiceEditError.textChanged }
+        guard result.text != before else { throw VoiceEditError.nothingToChange }
+        EditHistory.record(recording, target: target, before: before, after: result.text, command: command, in: context)
+        recording.setText(result.text, for: target)
+        save()
+        return VoiceEditResult(
+            highlight: ChangeHighlight(target: target, text: result.text, ranges: WordDiff.changedRanges(from: before, to: result.text)),
+            changeCount: nil
+        )
+    }
+
     // MARK: Deletion
 
     func delete(_ recording: Recording) {
@@ -229,6 +317,14 @@ final class RecordingService {
 
     private func makeClient() -> ProxyClient? {
         ProxyConfiguration.fromBundle().map { ProxyClient(configuration: $0, deviceID: settings.deviceID) }
+    }
+
+    /// Voice edits fail fast: the user is waiting on the card, and the text stays as it was.
+    private func makeVoiceEditClient() -> ProxyClient? {
+        guard var client = makeClient() else { return nil }
+        client.maxAttempts = 2
+        client.maxRetryDelay = 1
+        return client
     }
 
     private func glossaryTerms() -> [String] {

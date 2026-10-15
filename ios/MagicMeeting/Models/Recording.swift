@@ -91,3 +91,26 @@ final class Recording {
         }
     }
 }
+
+extension Recording {
+    func text(for target: EditTarget) -> String {
+        switch target {
+        case .transcript: transcript
+        case .summary: summary
+        case .protocolText: protocolText
+        }
+    }
+
+    /// Setting the transcript marks it edited so later appends are glued to the end.
+    func setText(_ text: String, for target: EditTarget) {
+        switch target {
+        case .transcript:
+            transcript = text
+            isTranscriptEdited = true
+        case .summary:
+            summary = text
+        case .protocolText:
+            protocolText = text
+        }
+    }
+}
