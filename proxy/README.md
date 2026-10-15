@@ -10,8 +10,10 @@ Go 1.24, standard library only.
 
 ## API
 
-All `/v1/*` requests need an `X-Device-ID` header (per-device rate limit) and,
-if `CLIENT_TOKENS` is set, `Authorization: Bearer <token>`.
+All `/v1/*` requests need an `X-Device-ID` header (per-device rate limit) and
+`Authorization: Bearer <token>` with one of the `CLIENT_TOKENS`. The proxy
+refuses to start when `CLIENT_TOKENS` is empty, unless `ALLOW_NO_AUTH=1` is set
+(local development only; a warning is logged at startup).
 
 ### `POST /v1/transcribe`
 
@@ -59,7 +61,7 @@ Errors: `{"error": "..."}` with 400 / 401 / 413 / 429 / 502 / 503 (Groq busy,
 ## Run locally
 
 ```sh
-GROQ_API_KEY=gsk_... go run .
+GROQ_API_KEY=gsk_... ALLOW_NO_AUTH=1 go run .
 go test ./...
 ```
 

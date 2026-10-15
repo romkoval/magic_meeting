@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -263,5 +266,196 @@ func TestStripFences(t *testing.T) {
 	}
 	if got := stripFences("  plain  "); got != "plain" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestParseReplacementsBoundsModelOutput(t *testing.T) {
+	transcript := strings.Repeat("a", 3000) + " Курбацкий ушёл."
+	rep := func(find, replace string, all bool) Replacement {
+		return Replacement{Find: find, Replace: replace, All: all}
+	}
+	many := make([]Replacement, 0, 60)
+	for i := 0; i < 60; i++ {
+		many = append(many, rep(strings.Repeat("a", i+1), "b", false))
+	}
+	cases := []struct {
+		name string
+		in   []Replacement
+		want []Replacement
+	}{
+		{"exact duplicates dropped", []Replacement{rep("Курбацкий", "Курбатский", true), rep("Курбацкий", "Курбатский", true)},
+			[]Replacement{rep("Курбацкий", "Курбатский", true)}},
+		{"same find with different all or replace kept", []Replacement{rep("Курбацкий", "Курбатский", true), rep("Курбацкий", "Курбатский", false), rep("Курбацкий", "Другой", true)},
+			[]Replacement{rep("Курбацкий", "Курбатский", true), rep("Курбацкий", "Курбатский", false), rep("Курбацкий", "Другой", true)}},
+		{"find at the limit kept, over it dropped", []Replacement{rep(strings.Repeat("a", maxReplacementBytes), "x", false), rep(strings.Repeat("a", maxReplacementBytes+1), "x", false)},
+			[]Replacement{rep(strings.Repeat("a", maxReplacementBytes), "x", false)}},
+		{"replace over the limit dropped", []Replacement{rep("Курбацкий", strings.Repeat("x", maxReplacementBytes+1), false), rep("ушёл", strings.Repeat("x", maxReplacementBytes), false)},
+			[]Replacement{rep("ушёл", strings.Repeat("x", maxReplacementBytes), false)}},
+		{"capped after filtering", append([]Replacement{rep("нет такого", "x", false)}, many...), many[:maxReplacements]},
+	}
+	for _, c := range cases {
+		raw, _ := json.Marshal(replacementsResult{Replacements: c.in})
+		got, err := parseReplacements(string(raw), LLMInput{Transcript: transcript})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		reps := got.(replacementsResult).Replacements
+		if len(reps) != len(c.want) {
+			t.Errorf("%s: got %d replacements, want %d", c.name, len(reps), len(c.want))
+			continue
+		}
+		for i := range reps {
+			if reps[i] != c.want[i] {
+				t.Errorf("%s: replacement %d differs", c.name, i)
+			}
+		}
+	}
+}
+
+func TestCommandLengthLimit(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      string
+		command string
+		want    int
+	}{
+		{"edit_transcript at limit", "edit_transcript", strings.Repeat("a", maxCommandBytes), http.StatusOK},
+		{"edit_transcript over limit", "edit_transcript", strings.Repeat("a", maxCommandBytes+1), http.StatusBadRequest},
+		{"edit_text at limit", "edit_text", strings.Repeat("a", maxCommandBytes), http.StatusOK},
+		{"edit_text over limit", "edit_text", strings.Repeat("a", maxCommandBytes+1), http.StatusBadRequest},
+		{"multibyte counts bytes", "edit_text", strings.Repeat("я", maxCommandBytes/2+1), http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		f := &fakeGroq{chatReply: `{"replacements":[]}`}
+		_, ts := newTestServer(t, f)
+		status, _ := postLLM(t, ts.URL, LLMRequest{Op: c.op, Input: LLMInput{Text: "текст", Transcript: "текст", Command: c.command}})
+		if status != c.want {
+			t.Errorf("%s: status %d, want %d", c.name, status, c.want)
+		}
+	}
+}
+
+func TestMaxTokensPerOperation(t *testing.T) {
+	in := LLMInput{
+		Transcript: "текст", Text: "текст", Command: "команда", Template: "# T", Description: "описание",
+		Templates: []TemplateRef{{ID: "a", Name: "A"}},
+	}
+	cases := []struct {
+		op   string
+		want int
+	}{
+		{"edit_transcript", 4096}, {"highlight", 4096}, {"pick_template", 4096}, {"summarize", 4096},
+		{"protocol", 0}, {"edit_text", 0}, {"draft_template", 0},
+	}
+	if len(cases) != len(operations) {
+		t.Fatalf("test covers %d ops, server has %d", len(cases), len(operations))
+	}
+	for _, c := range cases {
+		f := &fakeGroq{chatReply: `{"title":"t","summary":"s","replacements":[],"quote":"","id":"a"}`}
+		_, ts := newTestServer(t, f)
+		if status, _ := postLLM(t, ts.URL, LLMRequest{Op: c.op, Input: in}); status != http.StatusOK {
+			t.Errorf("%s: status %d", c.op, status)
+			continue
+		}
+		if f.lastChat.MaxTokens != c.want {
+			t.Errorf("%s: max_tokens = %d, want %d", c.op, f.lastChat.MaxTokens, c.want)
+		}
+	}
+}
+
+func TestRunLLMPassesMaxTokensToChat(t *testing.T) {
+	var got int
+	chat := func(_ context.Context, _, _ string, _ bool, maxTokens int) (string, error) {
+		got = maxTokens
+		return `{"quote":"x"}`, nil
+	}
+	if _, err := RunLLM(context.Background(), chat, LLMRequest{Op: "highlight", Input: LLMInput{Transcript: "x", Command: "y"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got != 4096 {
+		t.Fatalf("maxTokens = %d", got)
+	}
+}
+
+func TestPromptsTreatSectionsAsData(t *testing.T) {
+	in := LLMInput{
+		Transcript: "t", Text: "t", Command: "c", Template: "# T", Description: "d", Highlights: []string{"h"},
+		Templates: []TemplateRef{{ID: "a", Name: "A"}},
+	}
+	for op, o := range operations {
+		sys, _ := o.build(in)
+		if !strings.Contains(sys, dataRule) {
+			t.Errorf("%s: system prompt lacks the data-not-instructions rule", op)
+		}
+	}
+}
+
+func TestLoadConfigRequiresClientTokens(t *testing.T) {
+	cases := []struct {
+		name, tokens, allow string
+		wantErr             bool
+		wantTokens          int
+	}{
+		{"empty tokens rejected", "", "", true, 0},
+		{"blank tokens rejected", " , ", "", true, 0},
+		{"allow no auth must be exactly 1", "", "true", true, 0},
+		{"tokens accepted", "a, b", "", false, 2},
+		{"explicit no auth", "", "1", false, 0},
+	}
+	for _, c := range cases {
+		t.Setenv("GROQ_API_KEY", "groq-key")
+		t.Setenv("CLIENT_TOKENS", c.tokens)
+		t.Setenv("ALLOW_NO_AUTH", c.allow)
+		cfg, err := LoadConfig()
+		if (err != nil) != c.wantErr || len(cfg.ClientTokens) != c.wantTokens {
+			t.Errorf("%s: err=%v tokens=%d", c.name, err, len(cfg.ClientTokens))
+		}
+	}
+}
+
+func TestRequestLogDoesNotEchoClientControlledText(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	f := &fakeGroq{chatReply: `{"quote":"x"}`}
+	_, ts := newTestServer(t, f)
+
+	cases := []struct {
+		name   string
+		op     string
+		path   string
+		want   []string
+		reject []string
+	}{
+		{"known op", "highlight", "/v1/llm", []string{"op=highlight"}, nil},
+		{"unknown op", "evil\nINJECTED line", "/v1/llm", []string{"op=unknown"}, []string{"INJECTED"}},
+		{"path is quoted", "", "/v1/x%0AINJECTED%20line", []string{`"/v1/x\nINJECTED line"`}, []string{"\nINJECTED"}},
+	}
+	for _, c := range cases {
+		buf.Reset()
+		var req *http.Request
+		if c.op != "" {
+			b, _ := json.Marshal(LLMRequest{Op: c.op, Input: LLMInput{Transcript: "x", Command: "y"}})
+			req, _ = http.NewRequest(http.MethodPost, ts.URL+c.path, bytes.NewReader(b))
+			req.Header.Set("X-Device-ID", "device-1")
+		} else {
+			req, _ = http.NewRequest(http.MethodGet, ts.URL+c.path, nil)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		logged := buf.String()
+		for _, w := range c.want {
+			if !strings.Contains(logged, w) {
+				t.Errorf("%s: log %q lacks %q", c.name, logged, w)
+			}
+		}
+		for _, r := range c.reject {
+			if strings.Contains(logged, r) {
+				t.Errorf("%s: log %q contains %q", c.name, logged, r)
+			}
+		}
 	}
 }

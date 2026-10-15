@@ -166,8 +166,15 @@ type logInfo struct{ op string }
 type ctxKey struct{}
 
 func setLogOp(r *http.Request, op string) {
-	if li, ok := r.Context().Value(ctxKey{}).(*logInfo); ok && len(op) <= 32 {
+	li, ok := r.Context().Value(ctxKey{}).(*logInfo)
+	if !ok {
+		return
+	}
+	// The op comes from the client; only known names may reach the log.
+	if _, known := operations[op]; known {
 		li.op = op
+	} else {
+		li.op = "unknown"
 	}
 }
 
@@ -191,6 +198,6 @@ func logRequests(next http.Handler) http.Handler {
 		if li.op != "" {
 			op = " op=" + li.op
 		}
-		log.Printf("%s %s%s status=%d bytes_in=%d dur=%s", r.Method, r.URL.Path, op, rec.status, r.ContentLength, time.Since(start).Round(time.Millisecond))
+		log.Printf("%s %q%s status=%d bytes_in=%d dur=%s", r.Method, r.URL.Path, op, rec.status, r.ContentLength, time.Since(start).Round(time.Millisecond))
 	})
 }
