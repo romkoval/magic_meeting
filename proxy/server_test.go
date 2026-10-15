@@ -399,7 +399,9 @@ func TestLoadConfigRequiresClientTokens(t *testing.T) {
 		{"empty tokens rejected", "", "", true, 0},
 		{"blank tokens rejected", " , ", "", true, 0},
 		{"allow no auth must be exactly 1", "", "true", true, 0},
-		{"tokens accepted", "a, b", "", false, 2},
+		{"tokens accepted", strings.Repeat("a", 32) + ", " + strings.Repeat("b", 40), "", false, 2},
+		{"short token rejected", "short-token", "", true, 0},
+		{"example placeholder rejected", "replace_me_with_a_long_random_token", "", true, 0},
 		{"explicit no auth", "", "1", false, 0},
 	}
 	for _, c := range cases {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -23,6 +24,9 @@ type Config struct {
 	UpstreamTimeout time.Duration
 }
 
+// minClientTokenLen keeps pilot tokens out of guessing range; generate them with `openssl rand -hex 24`.
+const minClientTokenLen = 32
+
 func LoadConfig() (Config, error) {
 	c := Config{
 		ListenAddr:      env("LISTEN_ADDR", "127.0.0.1:8080"),
@@ -36,9 +40,15 @@ func LoadConfig() (Config, error) {
 		UpstreamTimeout: time.Duration(envInt("UPSTREAM_TIMEOUT_SEC", 180)) * time.Second,
 	}
 	for _, t := range strings.Split(os.Getenv("CLIENT_TOKENS"), ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			c.ClientTokens = append(c.ClientTokens, t)
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
 		}
+		// The example env file ships a placeholder; copying it verbatim must not open the proxy.
+		if len(t) < minClientTokenLen || strings.HasPrefix(t, "replace_me") {
+			return c, fmt.Errorf("CLIENT_TOKENS has a placeholder or a token shorter than %d characters", minClientTokenLen)
+		}
+		c.ClientTokens = append(c.ClientTokens, t)
 	}
 	if c.GroqAPIKey == "" {
 		return c, errors.New("GROQ_API_KEY is not set")
