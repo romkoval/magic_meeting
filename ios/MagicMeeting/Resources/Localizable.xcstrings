@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Allow microphone access in Settings to edit by voice.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешите доступ к микрофону в Настройках, чтобы править голосом."
+          }
+        }
+      }
+    },
     "Allow microphone access in Settings to record meetings.": {
       "localizations": {
         "ru": {
@@ -17,6 +27,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Разрешите отправку аудио в AI-сервис, чтобы получить транскрибацию."
+          }
+        }
+      }
+    },
+    "Allow sending data to the AI service to edit by voice.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешите отправку данных в AI-сервис, чтобы править голосом."
           }
         }
       }
@@ -47,6 +67,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Дозапись"
+          }
+        }
+      }
+    },
+    "Applied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Применено"
+          }
+        }
+      }
+    },
+    "Applying…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Применяю…"
           }
         }
       }
@@ -87,6 +127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Отменить"
+          }
+        }
+      }
+    },
+    "Changes: %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменений: %lld"
           }
         }
       }
@@ -181,12 +231,32 @@
         }
       }
     },
+    "Didn't catch that. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда не распознана. Попробуйте ещё раз."
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Готово"
+          }
+        }
+      }
+    },
+    "Edit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Править"
           }
         }
       }
@@ -211,6 +281,16 @@
         }
       }
     },
+    "Hold or tap and speak a command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удерживайте или нажмите и скажите команду"
+          }
+        }
+      }
+    },
     "I agree": {
       "localizations": {
         "ru": {
@@ -227,6 +307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Предупредите всех участников встречи, что вы её записываете."
+          }
+        }
+      }
+    },
+    "Listening…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слушаю…"
           }
         }
       }
@@ -377,6 +467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не отправлено на распознавание"
+          }
+        }
+      }
+    },
+    "Nothing to change for this command.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По этой команде менять нечего."
           }
         }
       }
@@ -651,12 +751,32 @@
         }
       }
     },
+    "Speak a command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сказать команду"
+          }
+        }
+      }
+    },
     "Stop": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Стоп"
+          }
+        }
+      }
+    },
+    "Stop and apply": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закончить и применить"
           }
         }
       }
@@ -687,6 +807,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Нажмите кнопку внизу, чтобы записать встречу."
+          }
+        }
+      }
+    },
+    "Tap to finish": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажмите, чтобы закончить"
           }
         }
       }
@@ -791,6 +921,26 @@
         }
       }
     },
+    "The text changed while the command was being applied. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Текст изменился, пока применялась команда. Попробуйте ещё раз."
+          }
+        }
+      }
+    },
+    "The text has changed since this edit, so it can't be undone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Текст изменился после этой правки, отменить её нельзя."
+          }
+        }
+      }
+    },
     "The transcript will appear after you stop.": {
       "localizations": {
         "ru": {
@@ -857,6 +1007,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Транскрибация"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить"
+          }
+        }
+      }
+    },
+    "Undone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменено"
           }
         }
       }
