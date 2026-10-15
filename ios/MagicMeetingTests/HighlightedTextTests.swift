@@ -28,3 +28,23 @@ final class HighlightedTextTests: XCTestCase {
         XCTAssertEqual(String(attributed.characters), "short")
     }
 }
+
+final class ChangeHighlightTests: XCTestCase {
+    private func ranges(_ count: Int, in text: String) -> [Range<String.Index>] {
+        Array(repeating: text.startIndex..<text.index(after: text.startIndex), count: count)
+    }
+
+    func testHighlightIsDroppedAboveMaxRanges() {
+        let text = "text"
+        XCTAssertNotNil(ChangeHighlight(target: .summary, text: text, ranges: ranges(ChangeHighlight.maxRanges, in: text)))
+        XCTAssertNil(ChangeHighlight(target: .summary, text: text, ranges: ranges(ChangeHighlight.maxRanges + 1, in: text)))
+    }
+
+    func testNoticeSaysWhenAFullTextEditIsNotHighlighted() {
+        let highlight = ChangeHighlight(target: .summary, text: "text", ranges: [])
+        XCTAssertEqual(VoiceEditResult(highlight: highlight, changeCount: nil).notice, .applied(count: nil))
+        XCTAssertEqual(VoiceEditResult(highlight: nil, changeCount: nil).notice, .appliedUnhighlighted)
+        // A transcript edit still reports its count when its marks are dropped.
+        XCTAssertEqual(VoiceEditResult(highlight: nil, changeCount: 600).notice, .applied(count: 600))
+    }
+}

@@ -18,8 +18,17 @@ struct ReplacementOutcome: Equatable {
 }
 
 /// Applies `edit_transcript` replacements. The replacements come from a model, so the
-/// work stays linear in the text size no matter how many matches a `find` has.
+/// work stays linear in the text size no matter how many matches a `find` has, and the
+/// number, size and growth of replacements are capped.
 enum ReplacementApplier {
+    /// A spoken command names a few fixes; a longer list is model noise.
+    static let maxReplacements = 50
+    /// Longer than any fragment a spoken command can name.
+    static let maxFragmentBytes = 2_000
+    /// The text may grow to twice its size, or by this much if that is more, so a chain
+    /// like "a" -> "aa" repeated cannot grow it exponentially on the main actor.
+    static let minGrowthAllowance = 64 * 1_024
+
     /// One matched occurrence, in UTF-8 offsets of the text it was found in.
     private struct Edit {
         let lo: Int
@@ -30,17 +39,27 @@ enum ReplacementApplier {
 
     static func apply(_ replacements: [TextReplacement], to text: String) -> ReplacementOutcome {
         var current = text
+        var currentSize = text.utf8.count
+        let maxSize = max(2 * currentSize, currentSize + minGrowthAllowance)
         // Offsets, not String.Index: mutating the string invalidates its indices.
         var marks: [Range<Int>] = []
         var applied = 0
-        for replacement in replacements {
-            guard !replacement.find.isEmpty, replacement.find != replacement.replace else { continue }
+        for replacement in replacements.prefix(maxReplacements) {
+            guard !replacement.find.isEmpty, replacement.find != replacement.replace,
+                  replacement.find.utf8.count <= maxFragmentBytes,
+                  replacement.replace.utf8.count <= maxFragmentBytes
+            else { continue }
             let found = edits(for: replacement, in: current)
             // A find consumed by an earlier replacement is skipped silently.
             guard !found.isEmpty else { continue }
+            // Checked before anything is copied. Skipped rather than stopping: a later,
+            // smaller replacement may still fit.
+            let projectedSize = currentSize + found.reduce(0) { $0 + $1.delta }
+            guard projectedSize <= maxSize else { continue }
             applied += found.count
             marks = merged(mapped(marks, through: found) + insertedMarks(of: found))
-            current = rewritten(current, with: found, inserting: replacement.replace)
+            current = rewritten(current, with: found, inserting: replacement.replace, size: projectedSize)
+            currentSize = projectedSize
         }
         return ReplacementOutcome(
             text: current,
@@ -72,12 +91,12 @@ enum ReplacementApplier {
     }
 
     /// Rebuilds the text in one pass over its bytes. Matches sit on Character boundaries,
-    /// so every copied piece is valid UTF-8 on its own.
-    private static func rewritten(_ text: String, with edits: [Edit], inserting replacement: String) -> String {
+    /// so every copied piece is valid UTF-8 on its own. `size` is the checked result size.
+    private static func rewritten(_ text: String, with edits: [Edit], inserting replacement: String, size: Int) -> String {
         let source = Array(text.utf8)
         let inserted = Array(replacement.utf8)
         var output: [UInt8] = []
-        output.reserveCapacity(source.count + edits.count * inserted.count)
+        output.reserveCapacity(size)
         var cursor = 0
         for edit in edits {
             output.append(contentsOf: source[cursor..<edit.lo])

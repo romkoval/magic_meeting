@@ -149,4 +149,64 @@ final class ReplacementApplierTests: XCTestCase {
         XCTAssertEqual(apply([], to: "text"), Applied(text: "text", marked: [], count: 0))
         XCTAssertEqual(apply([replace("a", "b")], to: ""), Applied(text: "", marked: [], count: 0))
     }
+
+    // MARK: Limits on model output
+
+    func testSelfFeedingChainStopsAtTheGrowthLimit() {
+        // Unbounded, 2000 doublings of the a's would never finish.
+        let outcome = ReplacementApplier.apply(Array(repeating: replace("a", "aa", all: true), count: 2_000), to: "banana")
+        let limit = 6 + ReplacementApplier.minGrowthAllowance
+        XCTAssertLessThanOrEqual(outcome.text.utf8.count, limit)
+        // 14 doublings fit (3 * 2^14 a's); the 15th would pass the limit and every later one is skipped.
+        XCTAssertEqual(outcome.text.utf8.count, 3 + 3 * 16_384)
+        XCTAssertEqual(outcome.appliedCount, 3 * (16_384 - 1))
+        XCTAssertTrue(outcome.text.hasPrefix("baaaa"))
+        XCTAssertTrue(outcome.text.hasSuffix("naaaa"))
+    }
+
+    func testOversizedFragmentsAreSkipped() {
+        let huge = String(repeating: "x", count: 100_000)
+        XCTAssertEqual(
+            apply([replace("a", huge, all: true), replace(huge, "y"), replace("b", "B")], to: "banana"),
+            Applied(text: "Banana", marked: ["B"], count: 1)
+        )
+        let largest = String(repeating: "x", count: ReplacementApplier.maxFragmentBytes)
+        XCTAssertEqual(apply([replace("b", largest)], to: "banana").count, 1)
+    }
+
+    func testReplacementPastTheGrowthLimitIsSkippedButLaterOnesApply() {
+        let fragment = String(repeating: "x", count: ReplacementApplier.maxFragmentBytes)
+        // 32 a's grow to 64 000 bytes, within 32 + 64 KB; 33 a's and " end" would make
+        // 66 004, past 37 + 64 KB.
+        let fits = ReplacementApplier.apply([replace("a", fragment, all: true)], to: String(repeating: "a", count: 32))
+        XCTAssertEqual(fits.text.utf8.count, 64_000)
+        XCTAssertEqual(fits.appliedCount, 32)
+
+        let text = String(repeating: "a", count: 33) + " end"
+        XCTAssertEqual(
+            apply([replace("a", fragment, all: true), replace("end", "END")], to: text),
+            Applied(text: String(repeating: "a", count: 33) + " END", marked: ["END"], count: 1)
+        )
+    }
+
+    func testLongTextMayDoubleButNoMore() {
+        let text = String(repeating: "ab", count: 50_000)
+        // The first exactly doubles the text; the second would go past that.
+        let outcome = ReplacementApplier.apply([replace("a", "aaa", all: true), replace("b", "bb", all: true)], to: text)
+        XCTAssertEqual(outcome.text.utf8.count, 200_000)
+        XCTAssertEqual(outcome.appliedCount, 50_000)
+        XCTAssertFalse(outcome.text.contains("bb"))
+    }
+
+    func testOnlyTheFirstReplacementsAreProcessed() {
+        let words = (0..<10_000).map { "w" + String(format: "%04d", $0) }
+        let replacements = words.map { replace($0, $0.uppercased()) }
+        let outcome = ReplacementApplier.apply(replacements, to: words.joined(separator: " "))
+        let result = outcome.text.split(separator: " ").map(String.init)
+        XCTAssertEqual(outcome.appliedCount, ReplacementApplier.maxReplacements)
+        XCTAssertEqual(outcome.text.utf8.count, words.joined(separator: " ").utf8.count)
+        XCTAssertEqual(result[ReplacementApplier.maxReplacements - 1], "W0049")
+        XCTAssertEqual(result[ReplacementApplier.maxReplacements], "w0050")
+        XCTAssertEqual(result.last, "w9999")
+    }
 }
