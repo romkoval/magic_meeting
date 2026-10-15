@@ -105,6 +105,10 @@ struct TextResult: Decodable, Sendable {
     let text: String
 }
 
+struct ReplacementsResult: Decodable, Sendable {
+    let replacements: [TextReplacement]
+}
+
 private struct LLMRequestBody: Encodable {
     let op: String
     let input: LLMInput
@@ -125,6 +129,8 @@ struct ProxyClient: Sendable {
     let deviceID: String
     var session: URLSession = .shared
     var maxAttempts = 3
+    /// Cap for Retry-After and backoff; voice edits use a small value to stay near the 5 s target.
+    var maxRetryDelay: TimeInterval = 30
 
     func transcribe(fileURL: URL, glossary: [String], language: String?) async throws -> TranscriptionResponse {
         let audio = try Data(contentsOf: fileURL)
@@ -188,9 +194,9 @@ struct ProxyClient: Sendable {
 
     private func retryDelay(attempt: Int, response: HTTPURLResponse?) -> Double {
         if let header = response?.value(forHTTPHeaderField: "Retry-After"), let seconds = Double(header) {
-            return min(seconds, 30)
+            return min(seconds, maxRetryDelay)
         }
-        return pow(2, Double(attempt)) // 2s, 4s
+        return min(pow(2, Double(attempt)), maxRetryDelay) // 2s, 4s
     }
 }
 
