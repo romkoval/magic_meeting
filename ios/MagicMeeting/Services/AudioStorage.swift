@@ -37,4 +37,34 @@ enum AudioStorage {
     static func deleteAll() {
         try? FileManager.default.removeItem(at: rootURL)
     }
+
+    // MARK: Temporary files
+
+    /// Prefixes of the short-lived m4a files in the temporary directory.
+    static let voiceCommandPrefix = "voice-command-"
+    static let chunkPrefix = "chunk-"
+
+    static func temporaryFileURL(prefix: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appending(path: "\(prefix)\(UUID().uuidString).m4a", directoryHint: .notDirectory)
+    }
+
+    /// Removes command and chunk files that a crash or kill left behind. Files created at
+    /// or after `date` are kept: this launch may already be using them.
+    static func deleteTemporaryFiles(createdBefore date: Date) {
+        let manager = FileManager.default
+        let prefixes = [voiceCommandPrefix, chunkPrefix]
+        guard let urls = try? manager.contentsOfDirectory(
+            at: manager.temporaryDirectory,
+            includingPropertiesForKeys: [.creationDateKey]
+        ) else { return }
+        for url in urls where url.pathExtension == "m4a" {
+            let name = url.lastPathComponent
+            guard prefixes.contains(where: { name.hasPrefix($0) }),
+                  let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate,
+                  created < date
+            else { continue }
+            try? manager.removeItem(at: url)
+        }
+    }
 }

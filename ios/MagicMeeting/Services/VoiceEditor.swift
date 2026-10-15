@@ -6,6 +6,7 @@ enum VoiceEditError: LocalizedError, Equatable {
     case emptyCommand
     case nothingToChange
     case textChanged
+    case saveFailed
 
     var errorDescription: String? {
         switch self {
@@ -17,20 +18,33 @@ enum VoiceEditError: LocalizedError, Equatable {
             String(localized: "Nothing to change for this command.")
         case .textChanged:
             String(localized: "The text changed while the command was being applied. Try again.")
+        case .saveFailed:
+            String(localized: "Couldn't save the change. Try again.")
         }
     }
 }
 
 struct VoiceEditResult {
-    let highlight: ChangeHighlight
+    /// Nil when the changes are not marked: too many of them, or a text too long to diff.
+    let highlight: ChangeHighlight?
     /// Replacements applied (transcript); nil for full-text edits.
     let changeCount: Int?
+
+    var notice: VoiceEditNotice {
+        if let changeCount { return .applied(count: changeCount) }
+        // With neither a count nor a highlight, nothing would show what the edit did.
+        return highlight == nil ? .appliedUnhighlighted : .applied(count: nil)
+    }
 }
 
 enum VoiceEditNotice: Equatable {
     /// "Changes: %lld" / "Applied".
     case applied(count: Int?)
+    /// A full-text edit whose changes could not be highlighted.
+    case appliedUnhighlighted
     case undone
+    /// A call or Siri took the microphone while listening.
+    case interrupted
     /// The status line offers "Open Settings".
     case microphoneDenied
     /// Already localized: VoiceEditError, ProxyError, AudioRecorderError, undo conflict.
@@ -43,8 +57,12 @@ enum VoiceEditNotice: Equatable {
                 return String(localized: "Changes: \(count)")
             }
             return String(localized: "Applied")
+        case .appliedUnhighlighted:
+            return String(localized: "Applied. Changes aren't highlighted in long texts, so check it before sharing.")
         case .undone:
             return String(localized: "Undone")
+        case .interrupted:
+            return String(localized: "Recording was interrupted.")
         case .microphoneDenied:
             return String(localized: "Allow microphone access in Settings to edit by voice.")
         case .message(let text):
@@ -79,7 +97,7 @@ final class VoiceEditor {
     var level: Float { recorder.level }
 
     /// A separate instance from the meeting recorder, which is idle while the card is visible.
-    @ObservationIgnored private let recorder = AudioRecorder()
+    private let recorder = AudioRecorder()
     /// Transcription and application of the recorded command.
     @ObservationIgnored private var task: Task<Void, Never>?
     /// Watches the recorder while listening: interruptions and the duration limit.
@@ -107,8 +125,7 @@ final class VoiceEditor {
         // The permission prompt may have overlapped another start or a cancel.
         guard phase == .idle, startGeneration == generation else { return }
 
-        let url = FileManager.default.temporaryDirectory
-            .appending(path: "voice-command-\(UUID().uuidString).m4a")
+        let url = AudioStorage.temporaryFileURL(prefix: AudioStorage.voiceCommandPrefix)
         do {
             try recorder.start(url: url)
         } catch {
@@ -172,6 +189,8 @@ final class VoiceEditor {
             notice = nil
         case .conflict:
             notice = .message(String(localized: "The text has changed since this edit, so it can't be undone."))
+        case .saveFailed:
+            notice = .message(VoiceEditError.saveFailed.localizedDescription)
         }
     }
 
@@ -192,8 +211,9 @@ final class VoiceEditor {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard let self, !Task.isCancelled, self.phase == .listening else { return }
                 if self.recorder.state != .recording {
-                    // A call or Siri took the microphone.
+                    // A call or Siri took the microphone. Unlike the user's own cancel, this says so.
                     self.cancel()
+                    self.notice = .interrupted
                 } else if self.recorder.elapsed >= VoiceEditor.maxCommandDuration {
                     self.finish()
                 }
@@ -214,7 +234,7 @@ final class VoiceEditor {
             let result = try await job.service.applyCommand(text, to: job.recording, target: job.target)
             try Task.checkCancellation()
             highlight = result.highlight
-            notice = .applied(count: result.changeCount)
+            notice = result.notice
             phase = .idle
         } catch {
             guard !Task.isCancelled else { return }
@@ -223,6 +243,7 @@ final class VoiceEditor {
             if !Self.isCancellation(error) {
                 notice = .message(error.localizedDescription)
             }
+            command = nil
             phase = .idle
         }
     }

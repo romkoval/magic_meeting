@@ -81,6 +81,16 @@
         }
       }
     },
+    "Applied. Changes aren't highlighted in long texts, so check it before sharing.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Применено. В длинных текстах изменения не подсвечиваются, проверьте текст перед отправкой."
+          }
+        }
+      }
+    },
     "Applying…": {
       "localizations": {
         "ru": {
@@ -197,6 +207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось начать запись."
+          }
+        }
+      }
+    },
+    "Couldn't save the change. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось сохранить изменение. Попробуйте ещё раз."
           }
         }
       }
@@ -607,6 +627,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Идёт запись"
+          }
+        }
+      }
+    },
+    "Recording was interrupted.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запись прервана."
           }
         }
       }

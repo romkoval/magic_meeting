@@ -4,8 +4,8 @@ import XCTest
 final class WordDiffTests: XCTestCase {
     // Words in these fixtures are unique on purpose: with repeated words the same
     // diff can be drawn in more than one equally short way.
-    private func changed(from old: String, to new: String) -> [String] {
-        WordDiff.changedRanges(from: old, to: new).map { String(new[$0]) }
+    private func changed(from old: String, to new: String) -> [String]? {
+        WordDiff.changedRanges(from: old, to: new)?.map { String(new[$0]) }
     }
 
     func testIdenticalTextHasNoChanges() {
@@ -47,7 +47,7 @@ final class WordDiffTests: XCTestCase {
 
     func testRangesIndexIntoTheNewText() {
         let new = "😀 один два три"
-        let ranges = WordDiff.changedRanges(from: "😀 один три", to: new)
+        let ranges = WordDiff.changedRanges(from: "😀 один три", to: new) ?? []
         XCTAssertEqual(ranges.count, 1)
         XCTAssertEqual(new[ranges[0]], "два")
         XCTAssertEqual(new[..<ranges[0].lowerBound], "😀 один ")
@@ -60,10 +60,11 @@ final class WordDiffTests: XCTestCase {
         XCTAssertEqual(changed(from: old, to: words.joined(separator: " ")), ["zz"])
     }
 
-    func testAboveMaxTokensGivesNoRanges() {
+    func testAboveMaxTokensIsNotDiffed() {
+        XCTAssertEqual(WordDiff.maxTokens, 1_500)
         let old = (0..<WordDiff.maxTokens).map { "w\($0)" }.joined(separator: " ")
         // One token over the limit on the new side, then on the old side.
-        XCTAssertEqual(changed(from: old, to: old + " extra"), [])
-        XCTAssertEqual(changed(from: old + " extra", to: old + " other"), [])
+        XCTAssertNil(changed(from: old, to: old + " extra"))
+        XCTAssertNil(changed(from: old + " extra", to: old + " other"))
     }
 }

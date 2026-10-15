@@ -25,16 +25,20 @@ final class RecordingService {
     private let settings: AppSettings
     private let monitor = NWPathMonitor()
     @ObservationIgnored private var started = false
+    /// Temporary audio created before this is left over from an earlier run.
+    private let launchDate = Date.now
 
     init(context: ModelContext, settings: AppSettings) {
         self.context = context
         self.settings = settings
     }
 
-    /// Call once at launch: repairs recordings cut off by a crash and starts the offline queue.
+    /// Call once at launch: repairs recordings cut off by a crash, removes their temporary
+    /// audio and starts the offline queue.
     func start() {
         guard !started else { return }
         started = true
+        AudioStorage.deleteTemporaryFiles(createdBefore: launchDate)
         recoverInterrupted()
         monitor.pathUpdateHandler = { @Sendable [weak self] path in
             guard path.status == .satisfied else { return }
@@ -184,7 +188,7 @@ final class RecordingService {
 
     /// Sends the command with the target's text to the LLM, applies the result, records an
     /// EditStep (with `command`) and saves. Throws VoiceEditError.needsConsent / .nothingToChange /
-    /// .textChanged, ProxyError, CancellationError. Never mutates anything when it throws.
+    /// .textChanged / .saveFailed, ProxyError, CancellationError. Never mutates anything when it throws.
     func applyCommand(_ command: String, to recording: Recording, target: EditTarget) async throws -> VoiceEditResult {
         guard settings.hasAIConsent else { throw VoiceEditError.needsConsent }
         guard let client = makeVoiceEditClient() else { throw ProxyError.notConfigured }
@@ -215,13 +219,16 @@ final class RecordingService {
         }
     }
 
-    /// EditHistory.undo + save().
+    /// EditHistory.undo + save. A failed save rolls the undo back and returns `.saveFailed`.
     func undoLastEdit(of recording: Recording, target: EditTarget) -> UndoOutcome {
         let outcome = EditHistory.undo(recording, target: target, in: context)
-        if outcome == .undone {
-            save()
+        guard outcome == .undone else { return outcome }
+        do {
+            try saveOrRollback()
+        } catch {
+            return .saveFailed
         }
-        return outcome
+        return .undone
     }
 
     private func applyReplacements(_ input: LLMInput, command: String, to recording: Recording, client: ProxyClient) async throws -> VoiceEditResult {
@@ -235,7 +242,7 @@ final class RecordingService {
         guard outcome.appliedCount > 0, outcome.text != current else { throw VoiceEditError.nothingToChange }
         EditHistory.record(recording, target: .transcript, before: current, after: outcome.text, command: command, in: context)
         recording.setText(outcome.text, for: .transcript)
-        save()
+        try saveOrRollback()
         return VoiceEditResult(
             highlight: ChangeHighlight(target: .transcript, text: outcome.text, ranges: outcome.changedRanges),
             changeCount: outcome.appliedCount
@@ -251,9 +258,11 @@ final class RecordingService {
         guard result.text != before else { throw VoiceEditError.nothingToChange }
         EditHistory.record(recording, target: target, before: before, after: result.text, command: command, in: context)
         recording.setText(result.text, for: target)
-        save()
+        try saveOrRollback()
+        // No ranges when the text is too long to diff; the notice then says it is not highlighted.
+        let ranges = WordDiff.changedRanges(from: before, to: result.text)
         return VoiceEditResult(
-            highlight: ChangeHighlight(target: target, text: result.text, ranges: WordDiff.changedRanges(from: before, to: result.text)),
+            highlight: ranges.flatMap { ChangeHighlight(target: target, text: result.text, ranges: $0) },
             changeCount: nil
         )
     }
@@ -307,6 +316,8 @@ final class RecordingService {
 
     private func isOffline(_ error: Error) -> Bool {
         if case ProxyError.offline = error { return true }
+        // Queued like a lost connection, so the audio is sent again later.
+        if case ProxyError.timedOut = error { return true }
         if let urlError = error as? URLError { return ProxyError.offlineCodes.contains(urlError.code) }
         return false
     }
@@ -324,6 +335,7 @@ final class RecordingService {
         guard var client = makeClient() else { return nil }
         client.maxAttempts = 2
         client.maxRetryDelay = 1
+        client.requestTimeout = 20
         return client
     }
 
@@ -337,6 +349,17 @@ final class RecordingService {
             try context.save()
         } catch {
             assertionFailure("SwiftData save failed: \(error)")
+        }
+    }
+
+    /// For voice edits and undo, which report a failed save instead of showing a change that
+    /// is not stored: the context goes back to its last saved state, dropping the change and its step.
+    private func saveOrRollback() throws {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw VoiceEditError.saveFailed
         }
     }
 }

@@ -19,6 +19,7 @@ struct ProxyConfiguration: Sendable {
 enum ProxyError: LocalizedError {
     case notConfigured
     case offline
+    case timedOut
     case server(status: Int, message: String?)
     case invalidResponse
 
@@ -28,6 +29,8 @@ enum ProxyError: LocalizedError {
             String(localized: "The server address is not configured.")
         case .offline:
             String(localized: "No connection to the server.")
+        case .timedOut:
+            String(localized: "The service did not respond in time.")
         case .server(let status, _):
             switch status {
             case 401, 403: String(localized: "The server denied access.")
@@ -131,6 +134,8 @@ struct ProxyClient: Sendable {
     var maxAttempts = 3
     /// Cap for Retry-After and backoff; voice edits use a small value to stay near the 5 s target.
     var maxRetryDelay: TimeInterval = 30
+    /// Replaces the per-path request timeouts when set; voice edits use a short one.
+    var requestTimeout: TimeInterval?
 
     func transcribe(fileURL: URL, glossary: [String], language: String?) async throws -> TranscriptionResponse {
         let audio = try Data(contentsOf: fileURL)
@@ -158,7 +163,7 @@ struct ProxyClient: Sendable {
     }
 
     private func makeRequest(path: String, timeout: TimeInterval) -> URLRequest {
-        var request = URLRequest(url: configuration.baseURL.appending(path: path), timeoutInterval: timeout)
+        var request = URLRequest(url: configuration.baseURL.appending(path: path), timeoutInterval: requestTimeout ?? timeout)
         request.httpMethod = "POST"
         request.setValue(deviceID, forHTTPHeaderField: "X-Device-ID")
         if let token = configuration.clientToken {
@@ -186,7 +191,9 @@ struct ProxyClient: Sendable {
                 try await Task.sleep(for: .seconds(retryDelay(attempt: attempt, response: http)))
             } catch let error as URLError {
                 guard ProxyError.offlineCodes.contains(error.code) else { throw error }
-                guard attempt < maxAttempts else { throw ProxyError.offline }
+                guard attempt < maxAttempts else {
+                    throw error.code == .timedOut ? ProxyError.timedOut : ProxyError.offline
+                }
                 try await Task.sleep(for: .seconds(retryDelay(attempt: attempt, response: nil)))
             }
         }

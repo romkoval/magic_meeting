@@ -2,14 +2,16 @@ import Foundation
 
 /// Word-level diff used to highlight what a full-text edit (summary, minutes) changed.
 enum WordDiff {
-    /// Above this many tokens on either side no ranges are returned (keeps the main actor responsive).
-    static let maxTokens = 3_000
+    /// Above this many tokens on either side there is no diff: Myers time and memory grow
+    /// with the token counts and the amount changed, and this runs on the main actor.
+    static let maxTokens = 1_500
 
-    /// Ranges in `new` covering words inserted or changed relative to `old`.
-    static func changedRanges(from old: String, to new: String) -> [Range<String.Index>] {
+    /// Ranges in `new` covering words inserted or changed relative to `old`;
+    /// nil when either side has more than `maxTokens` tokens.
+    static func changedRanges(from old: String, to new: String) -> [Range<String.Index>]? {
         let oldTokens = tokens(in: old)
         let newTokens = tokens(in: new)
-        guard oldTokens.count <= maxTokens, newTokens.count <= maxTokens else { return [] }
+        guard oldTokens.count <= maxTokens, newTokens.count <= maxTokens else { return nil }
 
         let oldWords = oldTokens.map { String(old[$0]) }
         let newWords = newTokens.map { String(new[$0]) }

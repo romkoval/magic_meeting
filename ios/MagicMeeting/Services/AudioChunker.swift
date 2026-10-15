@@ -38,8 +38,7 @@ enum AudioChunker {
         var outputs: [URL] = []
         do {
             for range in ranges {
-                let output = FileManager.default.temporaryDirectory
-                    .appending(path: "chunk-\(UUID().uuidString).m4a", directoryHint: .notDirectory)
+                let output = AudioStorage.temporaryFileURL(prefix: AudioStorage.chunkPrefix)
                 let timeRange = CMTimeRange(
                     start: CMTime(seconds: range.lowerBound, preferredTimescale: 600),
                     end: CMTime(seconds: range.upperBound, preferredTimescale: 600)

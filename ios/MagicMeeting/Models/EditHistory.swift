@@ -22,6 +22,8 @@ enum UndoOutcome: Equatable {
     case undone
     case nothingToUndo
     case conflict
+    /// Set by `RecordingService.undoLastEdit`: the undo could not be saved and was rolled back.
+    case saveFailed
 }
 
 extension EditHistory {
