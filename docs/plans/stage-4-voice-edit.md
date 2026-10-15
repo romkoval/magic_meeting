@@ -78,7 +78,7 @@ Contract:
 ```swift
 enum WordDiff {
     /// Above this many tokens on either side no ranges are returned (keeps the main actor responsive).
-    static let maxTokens = 3_000
+    static let maxTokens = 1_500   // lowered from 3_000 after review: Myers memory on the main actor
     /// Ranges in `new` covering words inserted or changed relative to `old`.
     static func changedRanges(from old: String, to new: String) -> [Range<String.Index>]
 }
@@ -257,7 +257,8 @@ State machine:
 idle --start (mic granted, recorder.start ok)--> listening
 idle --start (mic denied)--> idle [notice .microphoneDenied]
 listening --finish | elapsed >= 30 s--> transcribing
-listening --cancel | recorder.state != .recording (call/Siri)--> idle (file deleted, no notice)
+listening --cancel--> idle (file deleted, no notice)
+listening --recorder.state != .recording (call/Siri)--> idle (file deleted, notice "Recording was interrupted.")
 transcribing --duration < 0.5 s | empty text--> idle [.message(emptyCommand)]
 transcribing --text--> applying (command = text)
 applying --ok--> idle [highlight = result.highlight, .applied(count)]
@@ -554,3 +555,13 @@ The same file holds `ReplacementsResultDecodingTests`, which decodes `{"replacem
 - Leaving the card mid-request leaves no edit or step behind.
 - Airplane mode shows a readable error and leaves the text unchanged.
 - Dark mode contrast of the highlight color; VoiceOver activation of the big button.
+
+## 6. Changes after review
+
+Applied after swift-reviewer, silent-failure-hunter and security-reviewer:
+- `ReplacementApplier` treats model output as untrusted: at most 50 replacements, 2 KB per fragment, output capped at max(2× original, original + 64 KB).
+- Highlights above 500 ranges are dropped; long full-text edits show "Applied. Changes aren't highlighted…".
+- Save failures in apply/undo roll the context back and show "Couldn't save the change".
+- Voice edits use a 20 s request timeout; a timeout says "did not respond in time", not "no connection".
+- Leftover `voice-command-*` and `chunk-*` temp files are swept at launch.
+- Proxy: replacements deduped and capped, command ≤ 2 KB, `max_tokens` for short ops, sections marked as data in prompts, client tokens required.
