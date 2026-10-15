@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 /// Recording card: transcript, summary and minutes tabs with copy, share,
-/// append and manual editing. Voice editing, highlights and minutes come next.
+/// append, manual editing and voice editing with highlights and undo.
 struct RecordingDetailView: View {
     let recording: Recording
 
@@ -17,6 +17,8 @@ struct RecordingDetailView: View {
     @State private var recorderTarget: RecorderTarget?
     @State private var showConsent = false
     @State private var copyCount = 0
+    @State private var voiceEditor = VoiceEditor()
+    @State private var isVoiceEditing = false
 
     enum Tab: Hashable, CaseIterable {
         case transcript, summary, protocolText
@@ -47,8 +49,13 @@ struct RecordingDetailView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.bottom, 8)
-            .disabled(isEditing)
+            .disabled(isEditing || voiceEditor.phase != .idle)
             Divider()
+            // The status view alone reads the input level; this body must not.
+            if voiceEditor.phase != .idle || voiceEditor.notice != nil {
+                VoiceEditStatusView(editor: voiceEditor)
+                Divider()
+            }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -56,12 +63,23 @@ struct RecordingDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .safeAreaInset(edge: .bottom) {
-            if !isEditing { actionBar }
+            if isEditing {
+                EmptyView()
+            } else if isVoiceEditing {
+                VoiceEditBar(editor: voiceEditor, canStart: canVoiceEdit) { startVoiceCommand() }
+            } else {
+                actionBar
+            }
         }
         .fullScreenCover(item: $recorderTarget) { RecorderView(target: $0) }
         .sheet(isPresented: $showConsent) { ConsentView() }
         .sensoryFeedback(.success, trigger: copyCount)
-        .onChange(of: tab) { _, _ in isEditing = false }
+        .onChange(of: tab) { _, _ in
+            isEditing = false
+            voiceEditor.clearHighlight()
+            voiceEditor.dismissNotice()
+        }
+        .onDisappear { voiceEditor.cancel() }
     }
 
     // MARK: Header
@@ -182,10 +200,17 @@ struct RecordingDetailView: View {
 
     private func textView(_ text: String) -> some View {
         ScrollView {
-            Text(text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+            Group {
+                // Drawn only over the exact string the ranges came from; any later change hides it.
+                if let highlight = voiceEditor.highlight, highlight.target == tab.editTarget, highlight.text == text {
+                    HighlightedText(text: highlight.text, ranges: highlight.ranges)
+                } else {
+                    Text(text)
+                }
+            }
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
         }
     }
 
@@ -207,28 +232,75 @@ struct RecordingDetailView: View {
         recording.status == .ready || recording.status == .failed || recording.status == .pending
     }
 
+    private var isSummarizing: Bool {
+        service.summarizingIDs.contains(recording.id)
+    }
+
+    private var canVoiceEdit: Bool {
+        guard voiceEditor.phase == .idle, !currentText.isEmpty else { return false }
+        switch tab {
+        case .transcript: return recording.status == .ready
+        case .summary: return !isSummarizing
+        case .protocolText: return true
+        }
+    }
+
+    private var showsUndo: Bool {
+        !isEditing && EditHistory.latestStep(of: recording, target: tab.editTarget) != nil
+    }
+
+    private var canUndo: Bool {
+        guard voiceEditor.phase == .idle else { return false }
+        switch tab {
+        case .transcript: return recording.status != .transcribing
+        case .summary: return !isSummarizing
+        case .protocolText: return true
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if showsUndo {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    voiceEditor.undo(recording: recording, target: tab.editTarget, service: service)
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(!canUndo)
+            }
+        }
         ToolbarItem(placement: .topBarTrailing) {
             if isEditing {
                 Button("Done") { finishEditing() }
                     .fontWeight(.semibold)
+            } else if isVoiceEditing {
+                // Keeps the highlight so the result stays visible after leaving voice mode.
+                Button("Done") {
+                    isVoiceEditing = false
+                    voiceEditor.dismissNotice()
+                }
+                .fontWeight(.semibold)
+                .disabled(voiceEditor.phase != .idle)
             } else {
                 Menu {
                     Button {
+                        isVoiceEditing = false
+                        voiceEditor.clearHighlight()
+                        voiceEditor.dismissNotice()
                         draft = currentText
                         isEditing = true
                     } label: {
                         Label("Edit text", systemImage: "pencil")
                     }
-                    .disabled(currentText.isEmpty)
+                    .disabled(currentText.isEmpty || voiceEditor.phase != .idle)
                     if tab == .summary {
                         Button {
                             rebuildSummary()
                         } label: {
                             Label("Rebuild summary", systemImage: "arrow.clockwise")
                         }
-                        .disabled(recording.transcript.isEmpty || service.summarizingIDs.contains(recording.id))
+                        .disabled(recording.transcript.isEmpty || isSummarizing)
                     }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
@@ -245,9 +317,26 @@ struct RecordingDetailView: View {
     private var actionBar: some View {
         HStack(spacing: 12) {
             Button {
+                if settings.hasAIConsent {
+                    isVoiceEditing = true
+                } else {
+                    showConsent = true
+                }
+            } label: {
+                Label("Edit", systemImage: "waveform")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canVoiceEdit)
+
+            Button {
                 recorderTarget = .append(recording)
             } label: {
                 Label("Append", systemImage: "mic.badge.plus")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -285,16 +374,18 @@ struct RecordingDetailView: View {
         isEditing = false
         guard before != after else { return }
         EditHistory.record(recording, target: target, before: before, after: after, in: context)
-        switch target {
-        case .transcript:
-            recording.transcript = after
-            recording.isTranscriptEdited = true
-        case .summary:
-            recording.summary = after
-        case .protocolText:
-            recording.protocolText = after
-        }
+        recording.setText(after, for: target)
         service.save()
+    }
+
+    /// Consent is checked here as well as in the service: nothing is recorded without it.
+    private func startVoiceCommand() {
+        guard settings.hasAIConsent else {
+            showConsent = true
+            return
+        }
+        let target = tab.editTarget
+        Task { await voiceEditor.start(recording: recording, target: target, service: service) }
     }
 
     private func rebuildSummary() {
