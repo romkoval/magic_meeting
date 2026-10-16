@@ -339,8 +339,9 @@ final class RecordingService {
         return client
     }
 
+    /// Newest first: the proxy keeps only the head of the list that fits the Whisper prompt.
     private func glossaryTerms() -> [String] {
-        let descriptor = FetchDescriptor<GlossaryTerm>(sortBy: [SortDescriptor(\.term)])
+        let descriptor = FetchDescriptor<GlossaryTerm>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         return ((try? context.fetch(descriptor)) ?? []).map(\.term)
     }
 

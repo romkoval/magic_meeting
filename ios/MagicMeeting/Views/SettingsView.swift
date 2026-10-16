@@ -1,9 +1,11 @@
+import SwiftData
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingService.self) private var service
+    @Query private var glossary: [GlossaryTerm]
     @State private var showConsent = false
     @State private var confirmDeleteAll = false
 
@@ -35,6 +37,14 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("Automatic detection works for most meetings. Pick a language if short recordings are recognized in the wrong one.")
+                }
+
+                Section {
+                    NavigationLink {
+                        GlossaryView()
+                    } label: {
+                        LabeledContent("Glossary", value: glossary.count, format: .number)
+                    }
                 }
 
                 Section {
