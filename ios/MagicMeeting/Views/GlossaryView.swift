@@ -16,9 +16,12 @@ struct GlossaryView: View {
             Section {
                 HStack {
                     TextField("Surname or term", text: $input, axis: .vertical)
+                        // Autocorrect would "fix" exactly the names the glossary exists for.
+                        .autocorrectionDisabled()
                         .submitLabel(.done)
                         .onSubmit { add() }
                     Button("Add") { add() }
+                        .buttonStyle(.borderless)
                         .disabled(parsed.isEmpty)
                 }
             } footer: {
