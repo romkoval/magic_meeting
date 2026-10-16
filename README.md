@@ -18,6 +18,10 @@ brew install xcodegen && xcodegen                         # generates MagicMeeti
 open MagicMeeting.xcodeproj
 ```
 
+## Pilot 0.1
+
+Setup and test checklist for the first build on a real iPhone: [docs/pilot-0.1.md](docs/pilot-0.1.md).
+
 ## Run the proxy
 
 See [proxy/README.md](proxy/README.md). Locally: `cd proxy && GROQ_API_KEY=... go run .`
